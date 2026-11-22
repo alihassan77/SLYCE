@@ -62,11 +62,41 @@ From the Charm Quest test (2026-11), these were judged right; treat them as the 
 - **Bars**: the bar background 3-slices down to its caps plus a short centre, keeping the stroke and inner shadow at the caps, so Unity line-slices it to any length; its texture is small next to its placed size on 1125 x 2436.
 - **Fill bars** are exported **rounded at both ends**, even when the PSD masks one end straight to show a half fill: developers fill or crop them inside a rounded bar background. SLYCE does this automatically (`noRoundEnds` to keep a cut).
 - **Buttons** 3-slice with a centre wide enough that the sprite is about square in its texture (Btn-Play: 212 x 212 in 256), so the shine and the slice points are obvious; never a 4 px sliver under a shine.
-- **Background**: the whole static backdrop is one image fitted and padded into **2048 x 2048** (a 1870 x 2436 tablet PSD's art becomes 1572 x 2048 inside it); garland wires baked in; lights pulled out.
+- **Background**: a **painted** static backdrop (room, props, garlands) is one image fitted and padded into **2048 x 2048** (a 1870 x 2436 tablet PSD's art becomes 1572 x 2048 inside it); garland wires baked in; lights pulled out. A backdrop that is only a gradient or plain colour box with no artwork is **not** exported: `ignore` it and list its colours, stops and angle in the manifest for a Unity gradient component. Such a gradient needs at most a 32 x 32 texture, never a 2048 one.
 - **Sizes**: FUZIO's square powers of two, 32-1024; the title at most 512 (`Title-CharmQuest`); buttons like `Btn-Close` / `Btn-Info` at 128; the timer (`Timer-Bg` tinted fill, `Timer-Clock`, `Timer-Needle` 32) as is. Tiny sprites (under 64 px, a bulb) and animation states (`Light-On`) go up a size, never down, and keep their soft glow edges. Parts of one object (tree tiers) share one scale, even when that puts a wide tier in 1024.
 - **Parts replace the whole**: an object exported in parts (the tree in its tiers + bark) ships only as its parts; the whole sprite is not exported (SLYCE does this when the parts redraw it).
 - **Folders**: every sprite in one `Sprites` folder; one subfolder per artboard only when several artboards have sprites. When the artboards are variants of one feature (two layouts or states of the same screen), set `"artboardFolders": false` so all sprites share one folder; shared art then exports once.
 - **Locked set**: grey and socket versions exported as states, drawn from older art is fine; both lock styles kept (`Icon-Lock` padlock, `CharmsLocked-Slot` universal socket) for the artist to choose.
+
+## Lessons from Daily Login (Ali, 2026-11)
+
+Ali's review of the Daily Login export (two artboards, one feature). Reason the same way on other PSDs.
+
+**Right choices, keep doing them**
+- Bar-Bg and Bar-Fill sliced as on Charm Quest.
+- The Day 7 card's frame exported as a 9-sliced frame only: its inner gradient is rebuilt in Unity from a flat white circle plus a gradient component. **Never export a plain white circle or square**: Unity projects already have them.
+- Title lettering and the gifts split into parts (they drop and bounce).
+- Panel-Main and Panel-Bottom as separate sprites: their corner radii differ, so one sprite with Unity's pixels-per-unit multiplier would change the stroke width.
+- The link hook used twice exported once (Unity repeats it).
+- Two glow shapes that always show together and never animate apart exported as one sprite (`Glow-Today`).
+- The tick placed at two sizes exported once at the **bigger** placed size (128). Always export reused art at its largest placed size: a small export used big blurs, a big export used small is fine.
+
+**Look-alikes in different features stay separate, and their names say where they belong.** The day-streak number badge and the weekly-reward bar node look alike, but their strokes and colours differ slightly, and one sprite scaled through pixels-per-unit would change the stroke width. Two sprites are right. Name each by its feature so a developer knows where it goes during integration (`Badge-DailyStreak`, `Bar-Node-WeeklyReward`), never a bare `Badge-Number` / `Bar-Node`. The same goes for anything tied to one feature: the weekly reward's panel is `Panel-WeeklyReward`, not `Panel-Reward`. The test: any developer or a later team finds where a sprite belongs from its name alone.
+
+**Interchangeable items share one scale.** Boosters and collection packs are placeholders: the developer swaps which one goes where, so a booster placed small today may sit in the big Day 7 card tomorrow. Export every member of such a family (all boosters, all packs, all currency piles, all reward icons) at the **same** size, the size of the biggest slot any of them uses (256 on Daily Login), with headroom from the smart object when needed. Do not size each one by where it happens to be placed. When a member's source cannot reach that size (a raster layer, or a smart object smaller than the size), still export it at the family size and **flag** it in `plan_notes.md` and the warnings so the artist can supply a bigger source.
+
+**Swappable UI pieces share one canvas and one layout (prefab variants).** All day-card headers (normal, today, claimed, and the Day 7 header too: it differs in size and colour in the PSD, but giving it the same canvas is the cleaner practice) are swapped in one prefab, at runtime or as prefab variants. Their sprites must have the **same texture size, the same slice borders and the inner area at the same place** in the canvas, so swapping one for another needs no re-layout. The same holds for the day-card backgrounds (normal, today, claimed, dimmed, with or without shadow):
+- every variant has the same inner body size and position;
+- a **shadow** grows outward from that body (they line up when stacked: the shadowless one covers the shadowed one exactly, except the shadow);
+- a **stroke** grows outward too, keeping the inner area the same size;
+- so a variant without shadow or stroke is padded to the same canvas as the one with them.
+List each family in `plan_notes.md` (family name, members, shared canvas, body rect) so the reviewer can check it.
+
+**One object drawn in pieces is still one object.** The ribbon header and its cap together make one ribbon. Artists often build such a thing quickly: an older ribbon image dragged in and extended by duplicating a piece, so one end may be an editable shape and the other a raster copy. Figure out the intention (one ribbon) and export **one** `Ribbon-Header` (3-sliced if its middle is uniform), not a body and a separate cap. When the placed ribbon looks the same at both ends, export it **symmetrical**: build both ends from the better-made cap (mirrored), because Unity line-slices it. How the artist built it gives no direction; the visual result is the better hint.
+
+**Hidden or inactive leftovers vs current states.** Judge a hidden or inactive layer by the current active state. `Badge-Today` was an inactive badge next to the today card, but the active today state already looks complete (glow behind, arrow) in both artboards, so the badge is most likely from an older version: do not export it. A PSD holds many evolutions; work out what the current design and its related states are before exporting anything hidden.
+
+**Ask, don't guess.** When something is ambiguous, or a lesson here seems to contradict another rule or the PSD, put it under **open questions** in `plan_notes.md` and in your summary, so Ali answers it before the export, not after it.
 
 Edit `slyce_rules.json` with a JSON-aware edit (keep the `_help` block). Then run `python "<skill>/scripts/slyce.py" plan --psd "<psd>"` and look at the new plan sheet; repeat until the plan is right (at most 3 times).
 

@@ -10,7 +10,7 @@ You are the **SLYCE executor** (Slyce: PSD exporting assets and UI skill by Ali)
 
 The caller gives you the skill folder `<skill>`, the PSD path and the output folder `<out>`.
 
-1. If the caller passes reviewer feedback, apply **all** the fixes it lists in one pass (the goal is that the next review passes), each as an edit to `<out>/slyce_rules.json` (JSON-aware; keep `_help`). Only rule edits: never edit SLYCE's scripts, the PSD, or files the scripts wrote. If a fix cannot be expressed as a rule, do not improvise: report it back as "needs a person".
+1. If the caller passes reviewer feedback, apply **all** the fixes it lists in one pass (the goal is that the next review passes), each as an edit to `<out>/slyce_rules.json` (JSON-aware; keep `_help`). Only rule edits: never edit SLYCE's scripts, the PSD, or files the scripts wrote. If a fix cannot be expressed as a rule, do not improvise: report it back as "needs a person". If a fix contradicts another rule, the planner's notes or what you see in the PSD, do not pick one: report the contradiction as a question for Ali.
 2. Run `python "<skill>/scripts/slyce.py" redo --clean --psd "<psd>"` (Photoshop must be open; on a big PSD this takes minutes: run it in the background if your tool times out, and wait for it). It reuses the analysis and the render cache, so only changed elements render.
    - If the PSD itself changed since the analysis, run `run --clean` instead.
    - On `{"error": ...}`: Photoshop busy (a dialog or text edit open) or not running -> report it; do not retry more than once.
