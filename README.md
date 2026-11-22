@@ -39,4 +39,20 @@ Output goes to a folder named after the PSD, next to it (`D:/UI/Popup/`): `Sprit
 
 Every command appends a line to `<output>/.slyce/timings.jsonl`: seconds per stage (analyse, plan, export, process, total), layers, renders, sprites, parts and duplicates. The last process run's line is also in `manifest.json` under `timings`.
 
+## Regression test
+
+After changing SLYCE's scripts, check that already exported PSDs still come out the same, without Photoshop:
+
+```
+python scripts/slyce.py test                          # the PSDs in tests/cases.json (copy tests/cases.example.json)
+python scripts/slyce.py test --psd "D:/UI/Popup.psd"  # one PSD
+python scripts/slyce.py test --save                   # accept the current result as the new baseline
+```
+
+It re-plans and re-processes from the latest analysis and the render cache into a temp folder and lists every sprite, duplicate, tinted fill or skip that changed. The baseline lives in `<output>/.slyce/baseline.json`.
+
+## House rules
+
+Ali's export rules (naming, sizes, families, backgrounds, states) are in [reference/house_rules.md](reference/house_rules.md). The planner plans by them and the reviewer checks them; add new feedback there.
+
 See [SKILL.md](SKILL.md) for the workflow, [reference/rules.md](reference/rules.md) for every rule and threshold, and [agents/](agents/) for the planner, executor and reviewer.

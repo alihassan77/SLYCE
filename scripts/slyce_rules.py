@@ -29,6 +29,9 @@ DEFAULTS = {
         "states": "Smart objects whose contents hide extra states the artist will animate: {\"<layer pattern>\": {\"<State>\": {\"name\": \"Light-On\", \"show\": [\"<layer name inside>\"], \"hide\": [\"<layer name inside>\"]}}} exports each state as its own sprite.",
         "artboardFolders": "true: one Sprites subfolder per artboard when several artboards have sprites; false: one Sprites folder for all (artboards that are variants of one feature).",
         "keepRotation": "Rotated smart objects to export as rotated in the PSD (by default they are exported upright and the rotation goes into the manifest for Unity).",
+        "sameCanvas": "Families of sliced UI that swap in one prefab (card headers; card backgrounds with or without shadow or stroke): {\"DayHeaders\": [\"<pattern or sprite name>\", ...]}. Every member gets the same texture size, the same slice borders and its body at the same place; shadows and strokes grow outward.",
+        "symmetric": "3-sliced pieces that look the same at both ends in the PSD but were built unevenly (a ribbon whose second end is a dragged copy): {\"<pattern>\": \"left\"|\"right\"|\"top\"|\"bottom\"|\"auto\"} mirrors that end's cap onto the other, so Unity can line-slice it.",
+        "sameSize": "Families of interchangeable items the developer swaps between slots (boosters, packs, rewards): {\"Boosters\": [\"<pattern or sprite name>\", ...]}. Every member is exported at the same size, the biggest slot's, from its smart object's contents when it is placed smaller; a member whose source is too small is padded and flagged.",
         "parts": "Groups or smart objects to split into their parts for animation even when SLYCE would not (e.g. a tree whose tiers are grouped separately inside its smart object).",
         "noReuse": "Never reuse another sprite automatically for these (each keeps its own sprite, e.g. soft shadows of different shapes).",
         "noRoundEnds": "A 3-sliced bar cut straight at one end stays cut (by default the rounded end is mirrored so fills are round at both ends).",
@@ -61,6 +64,9 @@ DEFAULTS = {
     "headroomScale": 2,
     "states": {},
     "parts": [],
+    "sameSize": {},
+    "symmetric": {},
+    "sameCanvas": {},
     "keepRotation": [],
     "artboardFolders": True,
     "noRoundEnds": [],
@@ -95,6 +101,33 @@ class Rules(object):
         for pattern, states in (self.get("states") or {}).items():
             if pattern_matches(pattern, layer):
                 return states
+        return None
+
+    def canvas_family(self, layer, name=None):
+        """The sameCanvas family a layer belongs to, matched by layer pattern or by its sprite name."""
+        for fam, patterns in (self.get("sameCanvas") or {}).items():
+            for p in patterns:
+                if pattern_matches(p, layer) or (name and fnmatch.fnmatchcase(name.lower(), p.lower())):
+                    return fam
+        return None
+
+    def symmetric(self, layer):
+        """Rule `symmetric`: pattern -> the end whose cap is mirrored onto the other ("left", "right", "top",
+        "bottom", or "auto"). A list of patterns means "auto"."""
+        v = self.get("symmetric") or {}
+        if isinstance(v, list):
+            v = dict((p, "auto") for p in v)
+        for pattern, side in v.items():
+            if pattern_matches(pattern, layer):
+                return side or "auto"
+        return None
+
+    def family(self, layer, name=None):
+        """The sameSize family a layer belongs to, matched by layer pattern or by its sprite name."""
+        for fam, patterns in (self.get("sameSize") or {}).items():
+            for p in patterns:
+                if pattern_matches(p, layer) or (name and fnmatch.fnmatchcase(name.lower(), p.lower())):
+                    return fam
         return None
 
     def rename(self, layer):

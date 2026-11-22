@@ -12,10 +12,13 @@ You give it a PSD; it copies the PSD, reads every layer in Photoshop, decides wh
   SKILL.md                this file (workflow)
   README.md               team guide
   reference/rules.md      slyce_rules.json reference and every detection rule with its thresholds
+  reference/house_rules.md  Ali's export rules (the planner plans by them, the reviewer checks them); add new feedback here
   agents/                 slyce-planner.md, slyce-executor.md, slyce-reviewer.md (the three agents)
-  scripts/slyce.py        CLI: check, run, redo, analyse, plan, export, process
+  scripts/slyce.py        CLI: check, run, redo, analyse, plan, export, process, test
   scripts/slyce_plan.py   tree.json + rules -> plan.json (what to render, what to skip)
-  scripts/slyce_process.py renders -> sprites (FUZIO rules: fills, slices, gradient boxes, duplicates, sizing)
+  scripts/slyce_process.py renders -> sprites: skips, then slyce_decide.py (fills, slices, gradient boxes),
+                          slyce_dupes.py (duplicates), slyce_write.py (sizing, states, parts); helpers in slyce_shapes.py
+  scripts/slyce_test.py   regression test: re-process exported PSDs without Photoshop, compare with a baseline
   scripts/slyce_imaging.py, slyce_png.py, slyce_sheet.py, slyce_review.py, slyce_rules.py
   scripts/install_skill.py installs the skill into ~/.claude/skills/slyce and the agents into ~/.claude/agents
   photoshop/              slyce_read.jsx, slyce_export.jsx, slyce_common.jsx, slyce_check.jsx, json2.jsx, slyce_com.js
@@ -88,8 +91,9 @@ Radial and angle gradients are exported (FUZIO rebuilds radial looks from soft c
 <PSD folder>/<PSD name>/
   Sprites/<Name>.png, Sprites/<Art>/<Art>-<Part>.png
   manifest.json      elements (role, treatment, decisions), sprites (texture size, content rect, scale, borders,
-                     placed bounds in PSD px, status), duplicates, kit (tinted fills), gradients (gradient boxes
-                     with Gradient2 keys), texts, skipped (category + reason), artboards, stale/owned files
+                     placed bounds in PSD px, status), duplicates, tintedFills, gradients (gradient boxes
+                     with Gradient2 keys), texts, skipped (category + reason), artboards, stale/owned files,
+                     summary (counts, textures by size, textureMB), timings
   review.html        the review sheet
   slyce_rules.json   per-PSD rules (created on the first run)
   .slyce/runs/       last 3 runs: psd_copy, tree.json, thumbs/, composite.png, plan.json, renders.json

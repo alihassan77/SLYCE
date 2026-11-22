@@ -50,7 +50,7 @@ def write(out_dir, manifest, composite_rel):
     o.append("<h1>SLYCE review: %s</h1><div class=mute>%s &middot; run %s &middot; %dx%d px</div>" % (
         _e(m["root"]), _e(m["psd"]), _e(m["run"]), m["document"]["width"], m["document"]["height"]))
     stats = [("sprites", len(sprites)), ("parts", len(parts)), ("new / changed", changed), ("duplicates", len(m["duplicates"])),
-             ("tinted fills", len(m["kit"])), ("gradient boxes", len(m["gradients"])), ("texts", len(m["texts"])), ("skipped", len(m["skipped"]))]
+             ("tinted fills", len(m["tintedFills"])), ("gradient boxes", len(m["gradients"])), ("texts", len(m["texts"])), ("skipped", len(m["skipped"]))]
     o.append("<div class=stats>" + "".join("<div class=stat><b>%d</b><span class=mute>%s</span></div>" % (v, k) for k, v in stats) + "</div>")
     if m.get("warnings"):
         o.append("<h2>Warnings</h2><ul>" + "".join("<li>%s</li>" % _e(w) for w in m["warnings"]) + "</ul>")
@@ -90,12 +90,12 @@ def write(out_dir, manifest, composite_rel):
                  + "".join("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s%s</td><td>%s</td><td><code>%s</code></td></tr>" % (
                      _e(d["name"]), _e(d["source"]), _e(d.get("match")), _e(d.get("transform")), _e(d.get("scale")), _e(d.get("similarity")),
                      " (check)" if d.get("review") else "", _b(d["placed"]), _e(d["path"])) for d in m["duplicates"]) + "</table>")
-    if m["kit"]:
+    if m["tintedFills"]:
         o.append("<h2>Tinted fills (not exported)</h2><p class=mute>One flat colour in a box, rounded box or ellipse, checked by redrawing it (FUZIO 9.10): use the white box or circle sprite, tinted.</p>"
                  "<table><tr><th>Element</th><th>Shape</th><th>Colour</th><th>Radius</th><th>Draw with</th><th>Placed</th><th>Layer</th></tr>"
                  + "".join("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s (%s)</td><td>%s</td><td><code>%s</code></td></tr>" % (
                      _e(k["name"]), _e(k["shape"]), _swatch(k["color"]), _e(k.get("radius")), _e(k.get("sprite")), _e(k.get("imageType")),
-                     _b(k["placed"]), _e(k["path"])) for k in m["kit"]) + "</table>")
+                     _b(k["placed"]), _e(k["path"])) for k in m["tintedFills"]) + "</table>")
     if m["gradients"]:
         rows = []
         for g in m["gradients"]:
@@ -119,14 +119,14 @@ def write(out_dir, manifest, composite_rel):
             rows.append("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
                 _e(t.get("string")), _e(run.get("font")), _e(run.get("sizePx")), _swatch(run.get("color")), _e(fx), _b(t.get("bounds"))))
         o.append("<h2>Texts (not exported, rebuild as TextMeshPro)</h2><table><tr><th>Text</th><th>Font</th><th>Size px</th><th>Colour</th><th>Effects</th><th>Bounds</th></tr>%s</table>" % "".join(rows))
-    order = ["behind", "mockup", "covered", "fx", "kit", "rule", "hidden", "empty", "orphan", "other", "error", "text"]
+    order = ["behind", "mockup", "covered", "fx", "tintedFill", "rule", "hidden", "empty", "orphan", "other", "error", "text"]
     sk = []
     for cat in order + sorted(c for c in by_cat if c not in order):
         items = by_cat.get(cat)
         if not items or cat in ("text",):
             continue
         sk.append("<details%s><summary>%s (%d)</summary><table><tr><th>Layer</th><th>Reason</th><th>Rule pattern</th></tr>%s</table></details>" % (
-            "" if cat in ("hidden", "kit") else " open", _e(cat), len(items),
+            "" if cat in ("hidden", "tintedFill") else " open", _e(cat), len(items),
             "".join("<tr><td><code>%s</code></td><td>%s</td><td><code>id:%s</code></td></tr>" % (_e(s["path"]), _e(s["reason"]), _e(s["layerId"])) for s in items)))
     o.append("<h2>Skipped layers</h2><p class=mute>To change a decision, add the layer's path or id to <code>slyce_rules.json</code> (keep, ignore, whole, split, noSlice, ...) and run <code>redo</code>.</p>" + "".join(sk))
     if composite_rel:

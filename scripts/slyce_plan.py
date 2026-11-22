@@ -315,10 +315,17 @@ class Planner(object):
             "reuse": rules.reuse(layer),
             "noReuse": rules.matches("noReuse", layer),
             "noRoundEnds": rules.matches("noRoundEnds", layer),
+            "symmetric": rules.symmetric(layer),
             "states": [],
         }
         if gradient:
             el["gradient"] = gradient
+        fam = self.rules.family(layer, el["name"])
+        if fam:
+            el["family"] = fam
+        cfam = self.rules.canvas_family(layer, el["name"])
+        if cfam:
+            el["canvasFamily"] = cfam
         self.smart_extras(el, layer)
         if self.showing:
             # Show the layer, its hidden ancestors and everything hidden inside it for the render; never skip it.
@@ -377,7 +384,7 @@ class Planner(object):
         so = layer.get("smartObject") or {}
         t = so.get("transform") or {}
         p = t.get("corners")
-        wants = self.rules.matches("headroom", layer) or bool(self.rules.states(layer))
+        wants = self.rules.matches("headroom", layer) or bool(self.rules.states(layer)) or bool(el.get("family"))
         if layer["kind"] != "smartObject" or not p:
             return
         why = None
@@ -416,13 +423,22 @@ class Planner(object):
                              "centre": [(p[0] + p[2] + p[4] + p[6]) / 4.0, (p[1] + p[3] + p[5] + p[7]) / 4.0]}
             el["notes"].append("rotated %.1f deg in the PSD: exported upright, the rotation is in the manifest for Unity" % rotation)
         scale = 1.0
-        if self.rules.matches("headroom", layer):
+        if el.get("family"):
+            # A sameSize family member: render from the contents at the source's resolution (up to 4x), so it can
+            # be sized to the family's biggest slot in the process step. Headroom (if asked) sets that slot's size.
+            if self.rules.matches("headroom", layer) and not layer.get("effects"):
+                el["headroomScale"] = round(min(float(self.rules.get("headroomScale") or 2), native), 3)
+            if not layer.get("effects") and native > 1.05:
+                el["hires"] = dict(geo, show=[], hide=[], scale=round(min(native, 4.0), 3))
+                el["notes"].append("family %s: rendered from the smart object's contents at %.2fx placed" % (el["family"], el["hires"]["scale"]))
+        elif self.rules.matches("headroom", layer):
             if layer.get("effects"):
                 el["notes"].append("headroom asked, but the smart object has layer styles that a contents render would lose: placed size kept")
             else:
                 scale = round(min(float(self.rules.get("headroomScale") or 2), native), 3)
                 if scale > 1.05:
                     el["hires"] = dict(geo, show=[], hide=[], scale=scale)
+                    el["headroomScale"] = scale
                     el["notes"].append("headroom: rendered from the smart object's contents at %.2fx its placed size" % scale)
                 else:
                     scale = 1.0

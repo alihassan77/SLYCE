@@ -10,6 +10,7 @@ Python standard library only; drives Photoshop over COM (Windows) or AppleScript
   python slyce.py plan    --psd <file.psd>           plan.json from tree.json + slyce_rules.json
   python slyce.py export  --psd <file.psd> [--full]  render planned elements (unchanged ones come from the cache)
   python slyce.py process --psd <file.psd> [--clean]  sprites, manifest.json, review.html
+  python slyce.py test [--psd <file.psd>] [--save]  re-process exported PSDs without Photoshop, compare with a baseline
                                                      (--clean deletes sprites earlier runs made that are no longer produced)
 
 Output: a folder named after the PSD, next to it (or --out): Sprites/, manifest.json, review.html,
@@ -338,6 +339,7 @@ def cmd_process(ctx, run, clean=False):
         "rules": slyce_rules.rules_path(ctx.out),
     }
     manifest.update(res)
+    manifest["summary"] = summarise(res)
     write_json(os.path.join(ctx.out, "manifest.json"), manifest)
     comp = os.path.relpath(os.path.join(run, "composite.png"), ctx.out).replace("\\", "/")
     review = slyce_review.write(ctx.out, manifest, comp if os.path.exists(os.path.join(run, "composite.png")) else None)
@@ -353,15 +355,30 @@ def cmd_process(ctx, run, clean=False):
     status = {}
     for s in res["sprites"]:
         status[s["status"]] = status.get(s["status"], 0) + 1
-    cats = {}
+    out = {"output": ctx.out, "review": review, "manifest": os.path.join(ctx.out, "manifest.json"),
+           "reviewSheet": review_sheet, "composite": os.path.join(run, "composite.png"), "files": status}
+    out.update(manifest["summary"])
+    out.update({"stale": res["stale"], "removed": res["removed"], "warnings": res["warnings"]})
+    return out
+
+
+def summarise(res):
+    """The manifest's summary block: counts, textures by size and their memory (RGBA, uncompressed)."""
+    cats, sizes = {}, {}
     for s in res["skipped"]:
         cats[s["category"]] = cats.get(s["category"], 0) + 1
-    return {"output": ctx.out, "review": review, "manifest": os.path.join(ctx.out, "manifest.json"),
-            "reviewSheet": review_sheet, "composite": os.path.join(run, "composite.png"),
-            "sprites": len([s for s in res["sprites"] if s["kind"] != "part"]),
-            "parts": len([s for s in res["sprites"] if s["kind"] == "part"]), "files": status,
-            "duplicates": len(res["duplicates"]), "kit": len(res["kit"]), "gradients": len(res["gradients"]),
-            "texts": len(res["texts"]), "skipped": cats, "stale": res["stale"], "removed": res["removed"], "warnings": res["warnings"]}
+    px = 0
+    for s in res["sprites"]:
+        t = s.get("texture") or {}
+        k = "%dx%d" % (t.get("width", 0), t.get("height", 0))
+        sizes[k] = sizes.get(k, 0) + 1
+        px += t.get("width", 0) * t.get("height", 0)
+    return {"sprites": len([s for s in res["sprites"] if s["kind"] != "part"]),
+            "parts": len([s for s in res["sprites"] if s["kind"] == "part"]),
+            "duplicates": len(res["duplicates"]), "tintedFills": len(res["tintedFills"]), "gradients": len(res["gradients"]),
+            "texts": len(res["texts"]), "skipped": cats, "warnings": len(res["warnings"]),
+            "textures": dict(sorted(sizes.items(), key=lambda kv: -int(kv[0].split("x")[0]))),
+            "textureMB": round(px * 4 / 1048576.0, 1)}
 
 
 def cmd_check(timeout):
@@ -380,6 +397,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("check")
+    t = sub.add_parser("test", help="re-process already exported PSDs without Photoshop and compare with a baseline")
+    t.add_argument("--psd", action="append", help="PSD to test (repeatable; default: tests/cases.json)")
+    t.add_argument("--save", action="store_true", help="accept this result as the new baseline")
     for name in ("run", "redo", "analyse", "plan", "export", "process"):
         p = sub.add_parser(name)
         p.add_argument("--psd", required=True)
@@ -393,6 +413,16 @@ def main():
     if a.cmd == "check":
         print(json.dumps(cmd_check(min(a.timeout, 120)), indent=2))
         return
+    if a.cmd == "test":
+        import slyce_test
+        results = []
+        for psd in slyce_test.cases(a.psd):
+            t0 = time.time()
+            r = slyce_test.run_case(psd, a.save)
+            r["minutes"] = round((time.time() - t0) / 60.0, 1)
+            results.append(r)
+        print(json.dumps({"pass": all(r["pass"] for r in results), "cases": results}, indent=2))
+        sys.exit(0 if all(r["pass"] for r in results) else 1)
     ctx = Ctx(a.psd, a.out)
     result = {}
     timings = {}
