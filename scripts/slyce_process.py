@@ -185,6 +185,7 @@ def process(plan, renders, out_dir, rules, log=print, clean=False):
 
         c = {"el": el, "img": img, "placed": placed, "sprites": [], "decisions": [], "review": [], "treatment": None,
              "role": role, "dup": None, "keepDetail": role in ("title", "text") or bool(el.get("thinStroke")),
+             "stroked": "stroke" in (el.get("effectTypes") or []) and el["kind"] in ("shape", "fill"),
              "bgSize": int(rules.get("backgroundSize"))}
         _decide(c, el, img, placed, cv, keep, full_canvas, load)
         cands.append(c)

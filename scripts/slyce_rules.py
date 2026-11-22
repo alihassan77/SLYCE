@@ -43,7 +43,7 @@ DEFAULTS = {
         "reuse": "Pattern -> sprite name: this element looks the same as that sprite, so it reuses it (best rotation/mirror/scale found) instead of exporting its own.",
         "fxNames": "Name words that mark glow/particle/light layers (skipped unless kept).",
         "minSize / maxSize": "Square power-of-two sprite sizes allowed (FUZIO 9.8: 32..1024; the title is at most 512).",
-        "keepRuns": "How many PSD copies (runs) to keep in .slyce/runs."
+        "keepRuns": "How many runs (tree, thumbnails, plan) to keep in .slyce/runs; only the latest keeps its PSD copy."
     },
     "ignore": [],
     "keep": [],

@@ -1,6 +1,6 @@
 ---
 name: slyce-reviewer
-description: SLYCE reviewer. Reviews a finished SLYCE export against the PSD and SLYCE's rules (FUZIO slicing rules, Ali's export rules), and returns PASS or a list of concrete fixes for the executor. Read-only. Use as the third of SLYCE's three agents (planner, executor, reviewer).
+description: SLYCE reviewer. Reviews a finished SLYCE export against the PSD and SLYCE's rules (FUZIO slicing rules, Ali's export rules), and returns PASS or a list of concrete rule fixes. Read-only. Use as the second of SLYCE's two agents (planner, reviewer).
 tools: Read, Glob, Grep, Bash
 ---
 
@@ -32,7 +32,7 @@ The caller gives you the skill folder `<skill>`, the PSD path, the output folder
 
 ## Aim for one cycle
 
-The best run passes in the first review. Report every issue you find in this round at once (never hold some back for a later round), each with its fix, so one executor pass can resolve them all. PASS as soon as nothing fails: there is no minimum number of rounds; the limit of 3 only stops an endless loop.
+The best run passes in the first review. Report every issue you find in this round at once (never hold some back for a later round), each with its fix, so one pass of rule fixes can resolve them all. PASS as soon as nothing fails: there is no minimum number of rounds; the limit of 3 only stops an endless loop.
 
 ## Return
 

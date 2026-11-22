@@ -15,14 +15,14 @@ Artists build these PSDs as mocks: during production every state is drawn, and a
 - **States drawn from older art are fine** (silhouettes may not match the new art exactly); mention it, do not block on it. (CQ)
 - **Alternative design options**: when several **visible** versions of one thing exist (two lock styles) and you cannot tell which is final, export all of them with clear names (`Icon-Lock`, `CharmsLocked-Slot`) and say in `plan_notes.md` that the artist picks. Ignore only what is clearly reference or junk. (CQ)
 - **Paint-overs made for the mock** are not assets: strokes or wires painted on top only to make the mock look finished (wire bits painted over charms so they look entangled in the garland, `Tree-Garland`) are ignored. Pieces placed **inside** a group (wire segments inside each tree tier) belong to that piece and stay in it. (CQ)
-- **One object drawn in pieces is still one object.** The ribbon header and its cap together make one ribbon: artists often drag in an older ribbon and extend it by duplicating a piece, so one end may be an editable shape and the other a raster copy. Export **one** `Ribbon-Header` (3-sliced if its middle is uniform), not a body plus a cap. When the placed ribbon looks the same at both ends, export it **symmetrical**, both ends built from the better-made cap (mirrored), because Unity line-slices it (rule `symmetric`). The visual result decides, not how it was built. (DL)
+- **One object drawn in pieces is still one object.** The ribbon header and its cap together make one ribbon: artists often drag in an older ribbon and extend it by duplicating a piece, so one end may be an editable shape and the other a raster copy. Export **one** `Ribbon-Header` (3-sliced if its middle is uniform), not a body plus a cap. When the placed ribbon looks the same at both ends, export it **symmetrical**, both ends built from the cap with the **clearest pixels** (sharpest edges; mirrored), so both ends of the export are the same, because Unity line-slices it (rule `symmetric`; `auto` picks the sharper cap). The visual result decides, not how it was built. (DL)
 - **Open smart objects and groups and ask why they are layered.** `tree.json` lists every layer inside each smart object, hidden ones too (`smartObject.contents`, `visible` / `ownVisible`), and each group's children. Separate tiers, limbs or lids mean animation (see 6); hidden layers inside a smart object are usually states (see 6). (CQ)
 
 ## 2. Names
 
 - FUZIO 10.2 `Role-Variant`, letters and digits joined by single hyphens, unique. Shared sprites carry the plain name (`Light-Tree`), never an instance number. (CQ)
 - **Name by function in the game, not by looks.** The round lock icon that is the universal socket behind every locked charm is `CharmsLocked-Slot`, not `Icon-LockRound`. Prefer what a developer would search for: what it is for (Slot, Socket, Progress, Reward, Unlock), then which one. (CQ)
-- **Name by feature when a sprite belongs to one.** The day-streak number badge is `Badge-DailyStreak`, the weekly-reward bar node `Bar-Node-WeeklyReward`, the weekly reward's panel `Panel-WeeklyReward`; never a bare `Badge-Number`, `Bar-Node`, `Panel-Reward`. The test: any developer or a later team finds where a sprite belongs from its name alone. (DL)
+- **Name by feature when a sprite belongs to one.** On Daily Login the numbered circles above the weekly reward slots are `Badge-WeeklyReward`, the circles on the daily-streak bar `Bar-Node-DailyStreak`, the weekly reward's panel `Panel-WeeklyReward`; never a bare `Badge-Number`, `Bar-Node`, `Panel-Reward`. Check in the PSD which feature each piece really sits on before naming. The test: any developer or a later team finds where a sprite belongs from its name alone. (DL)
 
 ## 3. Background
 
@@ -35,11 +35,12 @@ Artists build these PSDs as mocks: during production every state is drawn, and a
 FUZIO's square powers of two, 32-1024; the title at most 512.
 
 - **Size for future use, not only the placed size.** Art that will animate, pop or zoom bigger (the active, colourful state of a collectible, a reward, a hero item) gets **`headroom`**: rendered from its smart object's contents at up to 2x its placed size (a 128 charm at 256). Locked / grey / socket states, slots and shadows stay at their placed size. Headroom needs a smart object whose source is bigger than placed (`smartObject.transform.sourceWidth`); raster layers cannot gain pixels, so say so. (CQ)
-- **Interchangeable items share one size.** Boosters, collection packs, currency piles and reward icons are placeholders the developer swaps between slots: a booster placed small today may sit in the big Day 7 card tomorrow. Export every member of the family at the size of the biggest slot any of them uses (256 on Daily Login): rule `sameSize`. A member whose source cannot reach it is still exported at that size and **flagged** (plan notes and warnings) so the artist can supply a bigger source. (DL)
+- **Interchangeable items share one size.** Boosters, collection packs, currency piles and reward icons are placeholders the developer swaps between slots: a booster placed small today may sit in the big Day 7 card tomorrow. Export every member of the family at the size of the biggest slot any of them uses (256 on Daily Login): rule `sameSize`. Items that only ever sit in their own small slot stay at their own size (Daily Login's coins at 128). A member whose source cannot reach it is still exported at that size and **flagged** (plan notes and warnings) so the artist can supply a bigger source. (DL)
 - **Reused art is exported at its largest placed size** (the tick placed at two sizes ships at 128): a small export used big blurs, a big export used small is fine. (DL)
 - **Shadows** tolerate blur: never larger than their object; an object near 128 keeps its shadow at or below 128. (CQ)
 - **Tiny sprites (under 64 px) and animation states go up a size, never down**, and keep their soft glow edges; a glow's edge is never cut. (CQ)
 - **Parts of one object share one scale**, even when that puts a wide tier in 1024. (CQ)
+- **Stroked UI shapes are not shrunk below 0.8** (a 3 px stroke would turn soft and stop matching its look-alikes): they go up a size (`Bar-Node-DailyStreak` 89 px -> 128). (DL)
 - Confirmed sizes: `Title-CharmQuest` 512, `Btn-Close` / `Btn-Info` 128, `Timer-Needle` 32, `Icon-Tick` 128. (CQ, DL)
 
 ## 5. Slicing and boxes
@@ -82,5 +83,5 @@ UI pieces that replace one another in one prefab, at runtime or as prefab varian
 ## 10. Working rules
 
 - **One cycle**: plan, one export, one review that passes. The 3-round review limit only stops an endless loop.
-- **Ask, don't guess.** When something is ambiguous, or a rule here seems to contradict another rule or the PSD, any agent lists it as a question for Ali (planner: open questions in `plan_notes.md`; reviewer: "Questions for Ali"; executor: in its report) instead of picking one.
+- **Ask, don't guess.** When something is ambiguous, or a rule here seems to contradict another rule or the PSD, any agent lists it as a question for Ali (planner: open questions in `plan_notes.md`; reviewer: "Questions for Ali"; main agent: asks the user before applying a fix) instead of picking one.
 - Report times in minutes.

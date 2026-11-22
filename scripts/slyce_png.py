@@ -7,6 +7,8 @@ import hashlib
 import struct
 import zlib
 
+import slyce_fast as F
+
 PNG_SIG = b"\x89PNG\r\n\x1a\n"
 
 
@@ -68,7 +70,24 @@ def _paeth(a, b, c):
     return c
 
 
+def _unfilter_row(ft, line, prev, stride, bpp):
+    """Average (3) and Paeth (4) rows, in place on `line`."""
+    if ft == 3:
+        for i in range(stride):
+            left = line[i - bpp] if i >= bpp else 0
+            line[i] = (line[i] + ((left + prev[i]) >> 1)) & 255
+    else:
+        for i in range(stride):
+            if i >= bpp:
+                line[i] = (line[i] + _paeth(line[i - bpp], prev[i], prev[i - bpp])) & 255
+            else:
+                line[i] = (line[i] + prev[i]) & 255
+    return line
+
+
 def _unfilter(raw, h, stride, bpp):
+    if F.ENABLED:
+        return F.unfilter_rows(raw, h, stride, bpp, _unfilter_row)
     out = bytearray(h * stride)
     prev = bytearray(stride)
     pos = 0
@@ -256,6 +275,8 @@ def resize_area(img, nw, nh):
     """Downscale with area averaging on premultiplied alpha (no dark fringes)."""
     if nw == img.w and nh == img.h:
         return img
+    if F.ENABLED:
+        return F.resize_area(img, nw, nh, Img)
     w, h = img.w, img.h
     src = img.px
     pre = [0.0] * (w * h * 4)

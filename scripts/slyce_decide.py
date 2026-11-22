@@ -173,6 +173,19 @@ def _edge_cover(img, axis, last):
     return sum(1 for v in line if v >= 200) / float(len(line) or 1)
 
 
+def _sharpness(img):
+    """Mean neighbour difference over the visible pixels: higher is crisper (used to pick the clearer cap)."""
+    px, w, tot, n = img.px, img.w, 0, 0
+    for y in range(img.h):
+        for x in range(1, w):
+            o = (y * w + x) * 4
+            if px[o + 3] < 8 and px[o - 1] < 8:
+                continue
+            tot += sum(abs(px[o + c] - px[o - 4 + c]) for c in range(4))
+            n += 1
+    return tot / float(n) if n else 0.0
+
+
 def round_both_ends(sl, c, symmetric=None):
     """A fill bar is often cut by a mask in the PSD: rounded at one end, straight at the other. Unity needs it
     rounded at both ends (sliced or filled along a rounded bar background), so the rounded cap is mirrored
@@ -190,7 +203,15 @@ def round_both_ends(sl, c, symmetric=None):
         elif symmetric == hi_side:
             keep_cap = "hi"
         else:
-            keep_cap = "lo" if b[lo_key] >= b[hi_key] else "hi"
+            # Ali: the cap with the clearest pixels (sharpest edges) wins; a tie keeps the bigger cap.
+            n_ = img.w if axis == "x" else img.h
+            lo_img = img.crop(0, 0, b[lo_key], img.h) if axis == "x" else img.crop(0, 0, img.w, b[lo_key])
+            hi_img = img.crop(n_ - b[hi_key], 0, b[hi_key], img.h) if axis == "x" else img.crop(0, n_ - b[hi_key], img.w, b[hi_key])
+            sl_, sh_ = _sharpness(lo_img), _sharpness(hi_img)
+            if abs(sl_ - sh_) > 0.05 * max(sl_, sh_, 1e-6):
+                keep_cap = "lo" if sl_ > sh_ else "hi"
+            else:
+                keep_cap = "lo" if b[lo_key] >= b[hi_key] else "hi"
         cut = "hi" if keep_cap == "lo" else "lo"
         if b[lo_key] == b[hi_key] and symmetric == "auto":
             return sl

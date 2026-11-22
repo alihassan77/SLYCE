@@ -2,6 +2,7 @@
 Uniformity, SliceDetector). Pure Python on slyce_png.Img (RGBA, rows top-down, y down)."""
 import math
 
+import slyce_fast as F
 from slyce_png import Img, resize_area
 
 GREY = (128, 128, 128)
@@ -22,6 +23,8 @@ def flatten(img, bg=GREY):
 
 def mae(a, b):
     """Mean absolute error over R, G, B in 0-255 units."""
+    if F.ENABLED:
+        return F.mae(a, b)
     fa, fb = flatten(a), flatten(b)
     if not fa:
         return 0.0
@@ -38,6 +41,8 @@ def ssim(a, b, max_side=384):
         f = max_side / float(max(a.w, a.h))
         nw, nh = max(1, int(round(a.w * f))), max(1, int(round(a.h * f)))
         a, b = resize_area(a, nw, nh), resize_area(b, nw, nh)
+    if F.ENABLED:
+        return F.ssim_luma(a, b)
     w, h = a.w, a.h
     la = [0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2] for p in flatten(a)]
     lb = [0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2] for p in flatten(b)]
@@ -161,11 +166,31 @@ def draw_shape(shape, w, h, radius, col):
 
 # ---------- uniformity and slicing (FUZIO Uniformity, SliceDetector, SliceDecider; spec 9.2, 9.3) ----------
 
+FAINT_ALPHA = 64      # pixels this faint (anti-aliased edges, soft shadow tails) ...
+FAINT_TOL = 24        # ... may differ this much in alpha and still count as uniform (invisible)
+
+
+LENIENT = [True]   # header_split turns it off: a soft shadow's fading body must not read as a header + flat body
+
+
+def _px_diff(p, q):
+    """Largest channel difference, with faint pixels compared premultiplied and their alpha tolerance folded
+    in: a soft edge whose alpha wobbles by up to FAINT_TOL must not block a slice (the difference is invisible)."""
+    if p[3] == 0 and q[3] == 0:
+        return 0
+    if not LENIENT[0]:
+        return max(abs(p[0] - q[0]), abs(p[1] - q[1]), abs(p[2] - q[2]), abs(p[3] - q[3]))
+    if p[3] <= FAINT_ALPHA and q[3] <= FAINT_ALPHA:
+        da = abs(p[3] - q[3])
+        dc = max(abs(p[c] * p[3] - q[c] * q[3]) for c in range(3)) // 255
+        return max(dc, 0 if da <= FAINT_TOL else da)
+    # Alpha gets 2 more: an anti-aliased edge wobbles by a few levels along a straight run (invisible).
+    return max(abs(p[0] - q[0]), abs(p[1] - q[1]), abs(p[2] - q[2]), abs(p[3] - q[3]) - 2)
+
+
 def _px_equal(p, q, tol):
     # Fully transparent pixels match whatever their colour.
-    if p[3] == 0 and q[3] == 0:
-        return True
-    return abs(p[0] - q[0]) <= tol and abs(p[1] - q[1]) <= tol and abs(p[2] - q[2]) <= tol and abs(p[3] - q[3]) <= tol
+    return _px_diff(p, q) <= tol
 
 
 def _line_equal(a, b, tol):
@@ -180,9 +205,7 @@ def _line_equal(a, b, tol):
 def _line_step(a, b):
     m = 0
     for i in range(0, len(a), 4):
-        if a[i + 3] == 0 and b[i + 3] == 0:
-            continue
-        d = max(abs(a[i] - b[i]), abs(a[i + 1] - b[i + 1]), abs(a[i + 2] - b[i + 2]), abs(a[i + 3] - b[i + 3]))
+        d = _px_diff(a[i:i + 4], b[i:i + 4])
         if d > m:
             m = d
     return m
@@ -261,9 +284,7 @@ def max_difference(a, b):
     m = 0
     pa, pb = a.px, b.px
     for i in range(0, len(pa), 4):
-        if pa[i + 3] == 0 and pb[i + 3] == 0:
-            continue
-        d = max(abs(pa[i] - pb[i]), abs(pa[i + 1] - pb[i + 1]), abs(pa[i + 2] - pb[i + 2]), abs(pa[i + 3] - pb[i + 3]))
+        d = _px_diff(pa[i:i + 4], pb[i:i + 4])
         if d > m:
             m = d
     return m
@@ -277,8 +298,9 @@ def decide_slice(img, tol=2, keep=4):
     cols = longest_run(img.w, img.col, tol)
     rows = longest_run(img.h, img.row, tol)
     res["columnRun"], res["rowRun"] = cols[1], rows[1]
-    cx = cols[1] > keep and is_flat_run(img.w, img.col, cols, tol)
-    cy = rows[1] > keep and is_flat_run(img.h, img.row, rows, tol)
+    # An axis is sliced only when it saves at least `keep` px (a 5 px run collapsed to 4 gains nothing).
+    cx = cols[1] >= 2 * keep and is_flat_run(img.w, img.col, cols, tol)
+    cy = rows[1] >= 2 * keep and is_flat_run(img.h, img.row, rows, tol)
     if not cx and not cy:
         return res
     cur = img
@@ -306,6 +328,14 @@ def decide_slice(img, tol=2, keep=4):
 def header_split(img, tol=2, keep=4, min_run_fraction=0.25):
     """FUZIO FindHeaderSplit (9.7): the smallest top band below which the rest has a collapsible column run of
     at least a quarter of the width. 0 when none is needed or possible (band at most half the image)."""
+    LENIENT[0] = False
+    try:
+        return _header_split(img, tol, keep, min_run_fraction)
+    finally:
+        LENIENT[0] = True
+
+
+def _header_split(img, tol, keep, min_run_fraction):
     min_run = max(keep + 1, int(math.ceil(img.w * min_run_fraction)))
 
     def body_has_run(band):
@@ -393,6 +423,8 @@ def radial_profile(img):
 def draw_transformed(src, angle, scale, flip, w, h, ox, oy):
     """Draws src mirrored (flip), scaled and turned by `angle` degrees (clockwise on screen, y down) about its
     centre, placed at the canvas centre plus (ox, oy). Bilinear on premultiplied alpha."""
+    if F.ENABLED:
+        return F.draw_transformed(src, angle, scale, flip, w, h, ox, oy, Img)
     out = Img(w, h)
     rad = -math.radians(angle)
     cos, sin = math.cos(rad), math.sin(rad)

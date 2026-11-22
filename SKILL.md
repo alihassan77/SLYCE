@@ -1,6 +1,6 @@
 ---
 name: slyce
-description: Slyce: PSD exporting assets and UI skill by Ali. Plans (planner agent), exports (executor agent) and reviews (reviewer agent) a Photoshop PSD/PSB, turning all its UI and 2D art into optimized sprites with FUZIO's slicing rules and semantic names, the background baked as one 2048 x 2048 image (square power-of-two PNGs, 9-slice/3-slice boxes, deduplicated copies, composed art split into parts for animation) plus a manifest and an HTML review sheet. Skips what an engine should rebuild itself (text, glows, particles, plain gradients, flat colour boxes and circles, mockup screens, hidden and covered layers) and lists it with colours, radii, gradient stops and font info. Use whenever someone wants to export, slice, cut or extract the assets/sprites/UI/art from a PSD, prepare a Photoshop UI mockup for Unity or another engine, re-export a PSD after changes, or tune what a PSD export keeps or skips.
+description: Slyce: PSD exporting assets and UI skill by Ali. Plans (planner agent), exports (the main agent runs one command) and reviews (reviewer agent) a Photoshop PSD/PSB, turning all its UI and 2D art into optimized sprites with FUZIO's slicing rules and semantic names, the background baked as one 2048 x 2048 image (square power-of-two PNGs, 9-slice/3-slice boxes, deduplicated copies, composed art split into parts for animation) plus a manifest and an HTML review sheet. Skips what an engine should rebuild itself (text, glows, particles, plain gradients, flat colour boxes and circles, mockup screens, hidden and covered layers) and lists it with colours, radii, gradient stops and font info. Use whenever someone wants to export, slice, cut or extract the assets/sprites/UI/art from a PSD, prepare a Photoshop UI mockup for Unity or another engine, re-export a PSD after changes, or tune what a PSD export keeps or skips.
 ---
 
 # Slyce: PSD exporting assets and UI skill by Ali
@@ -13,7 +13,7 @@ You give it a PSD; it copies the PSD, reads every layer in Photoshop, decides wh
   README.md               team guide
   reference/rules.md      slyce_rules.json reference and every detection rule with its thresholds
   reference/house_rules.md  Ali's export rules (the planner plans by them, the reviewer checks them); add new feedback here
-  agents/                 slyce-planner.md, slyce-executor.md, slyce-reviewer.md (the three agents)
+  agents/                 slyce-planner.md, slyce-reviewer.md (the two agents)
   scripts/slyce.py        CLI: check, run, redo, analyse, plan, export, process, test
   scripts/slyce_plan.py   tree.json + rules -> plan.json (what to render, what to skip)
   scripts/slyce_process.py renders -> sprites: skips, then slyce_decide.py (fills, slices, gradient boxes),
@@ -29,20 +29,20 @@ You give it a PSD; it copies the PSD, reads every layer in Photoshop, decides wh
 ## Safety (never break these)
 
 - The original PSD is only **copied**, never opened, changed or saved. Photoshop opens the copy in `.slyce/runs/<run>/psd_copy.psd` and closes it unsaved.
-- SLYCE writes only inside the output folder: a folder **named after the PSD, next to it** (`--out` to put it elsewhere). It keeps the last 3 runs (PSD copies) and deletes older runs in `.slyce/runs/` only.
+- SLYCE writes only inside the output folder: a folder **named after the PSD, next to it** (`--out` to put it elsewhere). It keeps the data of the last 3 runs but only the latest run's PSD copy, and deletes older runs and copies in `.slyce/runs/` only.
 - `--clean` deletes only sprites that SLYCE itself wrote in an earlier run (tracked in `manifest.json` `owned`).
 - Photoshop may have the user's own documents open; SLYCE touches only its own copy and temporary documents. Ask the user to finish any text edit or close open dialogs if Photoshop is busy (exit code 3).
 
-## Workflow: planner -> executor -> reviewer (at most 3 review rounds)
+## Workflow: planner -> export -> reviewer (at most 3 review rounds)
 
-SLYCE works with three agents. Start each with the Agent tool: `subagent_type` `slyce-planner`, `slyce-executor`, `slyce-reviewer` when they are installed (`install_skill.py` copies them to `~/.claude/agents`); otherwise a `general-purpose` agent told to "follow <skill>/agents/slyce-<role>.md". Give every agent the skill folder, the PSD path and the output folder; they know the rest from their file. You (the main agent) run the first steps, relay questions to the user, and keep the loop count.
+SLYCE works with two agents. Start each with the Agent tool: `subagent_type` `slyce-planner`, `slyce-reviewer` when they are installed (`install_skill.py` copies them to `~/.claude/agents`); otherwise a `general-purpose` agent told to "follow <skill>/agents/slyce-<role>.md". Give every agent the skill folder, the PSD path and the output folder; they know the rest from their file. You (the main agent) run every command yourself (check, analyse, export), relay questions to the user, apply the reviewer's rule fixes, and keep the loop count.
 
 1. **Check:** `$SLYCE check` -> Photoshop version, `ok: true` (2022 / v23 or later). If Photoshop is not running, ask the user to open it.
 2. **Analyse + draft plan:** `$SLYCE analyse --psd "<file.psd>"` then `$SLYCE plan --psd "<file.psd>"` (analysis of a 280 MB PSD with 660 layers takes ~2.5 min: run it in the background if your tool times out). This writes `tree.json`, thumbnails, the draft `plan.json` and the numbered `.slyce/plan_sheet.png`.
 3. **Planner** (`slyce-planner`): studies the PSD preview, plan sheet and tree, and writes `slyce_rules.json`: semantic `Role-Variant` names, the background as a whole and what to pull out of it, ignores (references, mockups, helpers), the title, roles, reuse. It writes `.slyce/plan_notes.md` and returns open questions. **Ask the user the open questions** (only those) before exporting, apply their answers as rules, and show them the plan in a few lines.
-4. **Executor** (`slyce-executor`): runs `$SLYCE redo --clean --psd ...` (render, slice, size, write) and reports counts, errors and the review sheet.
+4. **Export (you):** run `$SLYCE redo --clean --psd ...` (render, slice, size, write; minutes on a big PSD, so run it in the background) and read its JSON: `export.errors`, `process.warnings`, the counts. If Photoshop is busy or not running, ask the user; retry at most once.
 5. **Reviewer** (`slyce-reviewer`, read-only): checks the export against the PSD composite and the rules (checklist in its file) and returns `PASS` or `FAIL` with concrete rule fixes; it writes `.slyce/review_round<N>.md`.
-6. **Loop:** the goal is **one cycle**: plan, export, review, PASS. Stop as soon as the reviewer says PASS; never run extra rounds to "double-check". Only on `FAIL`, give the reviewer's fixes (all of them, in one batch) to the executor (step 4) and review again. **3 rounds is a safety cap against an endless loop, not a target.** If round 3 still fails, or a fix "needs a person", stop and ask the user for a suggestion, listing the open issues with the reviewer's evidence.
+6. **Loop:** the goal is **one cycle**: plan, export, review, PASS. Stop as soon as the reviewer says PASS; never run extra rounds to "double-check". Only on `FAIL`, apply all the reviewer's fixes in one pass as edits to `slyce_rules.json` (JSON-aware, keep `_help`; rules only, never SLYCE's scripts or the PSD; a fix that contradicts another rule goes to the user as a question), run step 4 again and review again. **3 rounds is a safety cap against an endless loop, not a target.** If round 3 still fails, or a fix "needs a person", stop and ask the user for a suggestion, listing the open issues with the reviewer's evidence.
 7. **Report to the user:** what was exported (count and semantic names), the background (one image, 2048 x 2048), tinted fills, gradient boxes, duplicates, texts for TMP, what was skipped and why (by category), the review verdict and rounds, and `<output>/review.html` (open it with the browser tool if available).
 8. **When the PSD itself changed**, start again at step 2 with `analyse` (new copy); the planner keeps the existing rules and only plans what is new. Unchanged layers come from the render cache, and `manifest.json` marks every sprite `new`, `changed` or `same`, so only real changes need reimporting.
 
@@ -83,7 +83,7 @@ Radial and angle gradients are exported (FUZIO rebuilds radial looks from soft c
 
 **Planning for future use** (the planner decides, the reviewer checks): `headroom` renders animating art (active collectibles, rewards) from its smart object at up to 2x its placed size; `states` exports states hidden inside smart objects (a light's lit glow); `parts` splits pieces the artist grouped for animation (tree tiers). `tree.json` lists every layer inside each smart object, hidden ones too (`smartObject.contents`).
 
-**Sizing** (9.8): `size = 2^round(log2(longest side))`, 32–1024 px (`minSize`, `maxSize`); within 5 % of the rounding boundary it rounds up for text and strokes <= 2 px. Art is padded when the size rounds up and downscaled only when it rounds down; sliced sprites are never resampled; the title is at most 512 px; parts keep their whole's scale; soft sprites (shadows, glows) round down; backgrounds are fitted and padded into 2048 x 2048.
+**Sizing** (9.8): `size = 2^round(log2(longest side))`, 32–1024 px (`minSize`, `maxSize`); within 5 % of the rounding boundary it rounds up for text and strokes <= 2 px. Art is padded when the size rounds up and downscaled only when it rounds down; sliced sprites are never resampled; the title is at most 512 px; parts keep their whole's scale; soft sprites (shadows, glows) round down; stroked UI shapes are never shrunk below 0.8 (they go up a size); backgrounds are fitted and padded into 2048 x 2048, a gradient-only background is not exported.
 
 ## Output
 

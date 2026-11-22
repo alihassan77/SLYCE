@@ -3,9 +3,13 @@
 
   python install_skill.py          # copy this folder to ~/.claude/skills/slyce
   python install_skill.py --link   # link instead of copy (edits in this folder are picked up live)
+  python install_skill.py --no-numpy   # skip the numpy install
 
-Also copies SLYCE's three agents (agents/slyce-planner.md, slyce-executor.md, slyce-reviewer.md) into
+Also copies SLYCE's two agents (agents/slyce-planner.md, slyce-reviewer.md) into
 ~/.claude/agents, so Claude Code can start them by name. Agent files are always copied (re-run after edits).
+
+Also installs numpy (pip, for this Python) when it is missing: SLYCE's pixel work runs much faster with it.
+SLYCE still works without it (pure Python, same sprites), so a failed install only prints a note.
 """
 import glob
 import os
@@ -49,9 +53,27 @@ def install_agents():
         print("Agent " + os.path.basename(f) + " -> " + AGENTS)
 
 
+def ensure_numpy():
+    try:
+        import numpy  # noqa: F401
+        print("numpy " + numpy.__version__ + " found: fast pixel work on")
+        return
+    except ImportError:
+        pass
+    print("Installing numpy for " + sys.executable + " (fast pixel work) ...")
+    cmd = [sys.executable, "-m", "pip", "install", "--user", "numpy"]
+    if sys.prefix != getattr(sys, "base_prefix", sys.prefix):
+        cmd.remove("--user")   # inside a virtual environment
+    r = subprocess.run(cmd)
+    if r.returncode != 0:
+        print("numpy could not be installed (SLYCE still works, only slower). Try: " + " ".join(cmd))
+
+
 def main():
     install_skill("--link" in sys.argv)
     install_agents()
+    if "--no-numpy" not in sys.argv:
+        ensure_numpy()
     print("Restart Claude Code (or open a new session) to load the skill and its agents.")
 
 

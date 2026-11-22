@@ -147,6 +147,20 @@ class Ctx(object):
         for d in dirs[:-keep]:
             shutil.rmtree(os.path.join(self.runs, d), ignore_errors=True)
             removed.append(d)
+        return removed + self.prune_copies()
+
+    def prune_copies(self):
+        """Only the latest run keeps its PSD copy (Ali: copies add ~280 MB each and nothing after analysis).
+        Older runs keep their data (tree.json, thumbnails, plan), so reports and the regression test still work.
+        Only SLYCE's own psd_copy files inside .slyce/runs are deleted; the original PSD is never touched."""
+        if not os.path.isdir(self.runs):
+            return []
+        ids = sorted(d for d in os.listdir(self.runs) if os.path.isdir(os.path.join(self.runs, d)))
+        removed = []
+        for rid in ids[:-1]:
+            for f in glob.glob(os.path.join(self.runs, rid, "psd_copy.*")):
+                os.remove(f)
+                removed.append(os.path.relpath(f, self.out))
         return removed
 
 
@@ -271,6 +285,7 @@ def cmd_export(ctx, run, full, timeout):
     tree = read_json(os.path.join(run, "tree.json"))
     os.makedirs(ctx.cache, exist_ok=True)
     specs = render_specs(plan, tree, run)
+    ext = os.path.splitext(ctx.psd)[1].lower()
     todo = []
     for s in specs:
         png = os.path.join(ctx.cache, s["sig"] + ".png")
@@ -287,7 +302,8 @@ def cmd_export(ctx, run, full, timeout):
             todo.append(job_el)
     done = None
     if todo:
-        ext = os.path.splitext(ctx.psd)[1].lower()
+        if not os.path.exists(os.path.join(run, "psd_copy" + ext)):
+            raise SystemExit("This run's PSD copy was removed (only the latest run keeps one): run `analyse` (or `run`) for a fresh copy.")
         log("SLYCE: rendering %d of %d elements in Photoshop (%d unchanged, from cache)" % (len(todo), len(specs), len(specs) - len(todo)))
         done = run_jsx(run, "export", "slyce_export.jsx", {
             "psdCopy": fwd(os.path.join(run, "psd_copy" + ext)), "runDir": fwd(run), "elements": todo,
@@ -390,7 +406,16 @@ def cmd_check(timeout):
         shutil.rmtree(work, ignore_errors=True)
     major = int(str(done.get("version", "0")).split(".")[0])
     return {"photoshop": done.get("version"), "ok": major >= MIN_PS_MAJOR, "openDocuments": done.get("documents"),
-            "platform": platform.system(), "python": platform.python_version(), "slyce": VERSION}
+            "platform": platform.system(), "python": platform.python_version(), "slyce": VERSION,
+            "numpy": _numpy_version()}
+
+
+def _numpy_version():
+    try:
+        import numpy
+        return numpy.__version__
+    except ImportError:
+        return None   # SLYCE works without it, only slower: `python install_skill.py` installs it
 
 
 def main():
@@ -424,6 +449,7 @@ def main():
         print(json.dumps({"pass": all(r["pass"] for r in results), "cases": results}, indent=2))
         sys.exit(0 if all(r["pass"] for r in results) else 1)
     ctx = Ctx(a.psd, a.out)
+    ctx.prune_copies()
     result = {}
     timings = {}
     started = time.time()

@@ -279,7 +279,7 @@ def rebuild_gradient_box(m, full, fx, fy, mask, mx, my, frame, frx, fry, shape):
 
 # ---------- sizing (FUZIO Sizing; spec 9.8) ----------
 
-def decide_size(max_side, sliced, keep_detail, min_size, max_size, cap, soft=False):
+def decide_size(max_side, sliced, keep_detail, min_size, max_size, cap, soft=False, stroked=False):
     if max_side <= 0:
         return {"size": min_size, "scale": 1.0, "reason": "empty"}
     lg = math.log(max_side, 2)
@@ -297,6 +297,11 @@ def decide_size(max_side, sliced, keep_detail, min_size, max_size, cap, soft=Fal
         exp = int(round(lg))
         reason = "2^round(log2(%d))" % max_side
     size = max(min_size, min(max_size, 2 ** max(0, exp)))
+    if stroked and not sliced and not soft and size < 0.8 * max_side:
+        # A stroked shape shrunk below 0.8 loses its stroke width (3 px -> 2.2 px looks soft and no longer
+        # matches its look-alikes): go up a size instead (Daily Login review).
+        size = 2 ** int(math.ceil(lg))
+        reason += "; stroked: rounded up to %d instead of shrinking below 0.8" % size
     if size < max_side and max_side <= 64 and not sliced:
         # Tiny sprites (a bulb, a small glow) lose too much when shrunk: go up a size instead (Ali).
         size = 2 ** int(math.ceil(lg))

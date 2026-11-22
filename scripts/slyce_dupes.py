@@ -7,6 +7,7 @@ import os
 import re
 import time
 
+import slyce_fast as F
 import slyce_imaging as I
 import slyce_png as P
 
@@ -20,6 +21,8 @@ def _luma(px, k):
 
 
 def _alpha_error(a, b):
+    if F.ENABLED:
+        return F.alpha_error(a, b)
     s = 0.0
     pa, pb = a.px, b.px
     for k in range(0, len(pa), 4):

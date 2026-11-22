@@ -85,8 +85,11 @@ def _write(cands, result, out_dir, prev, min_size, max_size, load, log, artboard
             name = el["name"] + sp["suffix"]
             img, sliced = sp["img"], sp["borders"] is not None
             placed_w = float(img.w)
-            if sliced and sp["purpose"] == "main" and canvas_fams.get(el.get("canvasFamily")):
-                img, sp = _onto_family_canvas(img, sp, canvas_fams[el["canvasFamily"]], entry, el["canvasFamily"])
+            if id(sp) in canvas_fams:
+                fimg, fb, note = canvas_fams[id(sp)]
+                entry["decisions"].append(note)
+                sp = dict(sp, img=fimg, borders=fb)
+                img = fimg
             alt = ":hires" if el.get("hires") else (":upright" if el.get("uprightRender") else None)
             if sp["purpose"] == "main" and not sliced and alt and c["treatment"] == "whole":
                 hi, hx, hy = load(el["key"] + alt)
@@ -126,7 +129,7 @@ def _write(cands, result, out_dir, prev, min_size, max_size, load, log, artboard
                     work = P.resize_area(img, max(1, int(round(img.w * f))), max(1, int(round(img.h * f))))
                 else:
                     work = img
-                    if side < 0.9 * target:
+                    if side < 0.95 * target:
                         c["review"].append("family %s: source is %d px, smaller than the family's %d px; padded, not upscaled "
                                            "(ask the artist for a bigger source)" % (el["family"], side, target))
                 final = P.pad_center(work, size, size)
@@ -138,7 +141,7 @@ def _write(cands, result, out_dir, prev, min_size, max_size, load, log, artboard
                 cap = sp["cap"] or max_size
                 vis = [v for v in img.alpha() if v >= 8]
                 soft = bool(vis) and sum(1 for v in vis if v < 200) / float(len(vis)) >= 0.45
-                sz = decide_size(max(img.w, img.h), sliced, c["keepDetail"], min_size, max_size, cap, soft)
+                sz = decide_size(max(img.w, img.h), sliced, c["keepDetail"], min_size, max_size, cap, soft, c.get("stroked"))
                 work = img
                 if sz["scale"] < 1 and not sliced:
                     work = P.resize_area(img, max(1, int(round(img.w * sz["scale"]))), max(1, int(round(img.h * sz["scale"]))))
@@ -191,76 +194,127 @@ def _write(cands, result, out_dir, prev, min_size, max_size, load, log, artboard
         log("  %-32s %s" % (el["name"], entry["treatment"]))
 
 
-def _body_top(img):
-    """First row of the solid body (alpha >= 200 on a tenth of the row): soft shadows and glows are left out."""
-    need = max(1, img.w // 10)
-    for y in range(img.h):
-        if sum(1 for v in img.row(y)[3::4] if v >= 200) >= need:
-            return y
-    return 0
+def _inner_span(img, axis, at, along):
+    """Inner area along one axis: from `along` (inside the uniform centre) outwards while the pixels keep the
+    centre's colour (within 40) and stay opaque. Strokes, shadows and bevels outside it are left out, so a
+    variant with a stroke or shadow lines up with one without (Ali: they grow outward)."""
+    n = img.w if axis == "x" else img.h
+
+    def px(i):
+        o = ((at * img.w + i) if axis == "x" else (i * img.w + at)) * 4
+        return img.px[o:o + 4]
+
+    ref = px(along)
+
+    def same(q):
+        return q[3] >= 200 and max(abs(q[0] - ref[0]), abs(q[1] - ref[1]), abs(q[2] - ref[2])) <= 40
+
+    lo = along
+    while lo - 1 >= 0 and same(px(lo - 1)):
+        lo -= 1
+    hi = along + 1
+    while hi < n and same(px(hi)):
+        hi += 1
+    return lo, hi
 
 
-def _body_left(img):
-    need = max(1, img.h // 10)
-    for x in range(img.w):
-        if sum(1 for v in img.channel_col(x, 3) if v >= 200) >= need:
-            return x
-    return 0
+def _body_span(c, sp, axis, img, b, lo_k):
+    """The layer's own body (its bounds without effects: strokes, shadows and glows grow outward from it) along
+    one axis, in the sliced sprite's pixels. (None, None) when the layer has no such bounds."""
+    bb = c["el"].get("shapeBounds")
+    p = sp.get("placed") or c["placed"]
+    if not bb or not bb.get("width") or not bb.get("height"):
+        return None, None
+    pos, size = ("x", "width") if axis == "x" else ("y", "height")
+    s0 = max(0, bb[pos] - p[pos])
+    e0 = min(p[size], bb[pos] + bb[size] - p[pos])
+    removed = p[size] - (img.w if axis == "x" else img.h)   # the collapsed centre run (0 on an unsliced axis)
+    if e0 > b[lo_k]:
+        e0 -= removed
+    if e0 - s0 < 1:
+        return None, None
+    return s0, e0
 
 
-def _canvas_targets(cands):
-    """sameCanvas families (Ali, Daily Login): swappable sliced pieces share one canvas. Along a sliced axis the
-    slice lines line up (each border padded out to the family's widest); along an unsliced axis the solid bodies
-    line up (shadows and strokes grow outward), and every member is padded to the family's biggest extent."""
-    fams = {}
+def _expand(img, axis, start, width, extra):
+    if extra <= 0:
+        return img
+    if axis == "x":
+        return I.expand_cols(img, start, width, img.w + extra)
+    return I.expand_rows(img, start, width, img.h + extra)
+
+
+def _canvas_targets(cands, keep=4):
+    """sameCanvas families (Ali, Daily Login): swappable sliced pieces share one canvas. Every member's body
+    (its layer bounds without effects; else the fill inside strokes and shadows) is lined up at the same place; along a sliced axis the uniform
+    centre is stretched (lossless) so every inner area has the same length and the slice lines are shared;
+    strokes and shadows grow outward. Returns {id(sprite): (img, borders, note)}."""
+    fams, c_of = {}, {}
     for c in cands:
         fam = c["el"].get("canvasFamily")
         if not fam or c["dup"]:
             continue
         for sp in c["sprites"]:
             if sp["purpose"] == "main" and sp["borders"] is not None:
-                b, img = sp["borders"], sp["img"]
-                f = fams.setdefault(fam, {"left": 0, "right": 0, "top": 0, "bottom": 0, "midW": 0, "midH": 0,
-                                          "bodyTop": 0, "belowTop": 0, "bodyLeft": 0, "rightOfLeft": 0, "members": 0})
-                f["members"] += 1
-                for k in ("left", "right", "top", "bottom"):
-                    f[k] = max(f[k], b[k])
-                f["midW"] = max(f["midW"], img.w - b["left"] - b["right"])
-                f["midH"] = max(f["midH"], img.h - b["top"] - b["bottom"])
-                if b["top"] == 0 and b["bottom"] == 0:   # rows not sliced: line up the bodies' tops
-                    t = _body_top(img)
-                    f["bodyTop"], f["belowTop"] = max(f["bodyTop"], t), max(f["belowTop"], img.h - t)
-                if b["left"] == 0 and b["right"] == 0:
-                    l_ = _body_left(img)
-                    f["bodyLeft"], f["rightOfLeft"] = max(f["bodyLeft"], l_), max(f["rightOfLeft"], img.w - l_)
-    return dict((k, v) for k, v in fams.items() if v["members"] > 1)
-
-
-def _onto_family_canvas(img, sp, f, entry, fam):
-    b = sp["borders"]
-    if b["top"] == 0 and b["bottom"] == 0:
-        t = _body_top(img)
-        pt = f["bodyTop"] - t
-        pb = f["bodyTop"] + f["belowTop"] - pt - img.h
-    else:
-        pt = f["top"] - b["top"]
-        pb = f["bottom"] - b["bottom"] + (f["midH"] - (img.h - b["top"] - b["bottom"]))
-    if b["left"] == 0 and b["right"] == 0:
-        l_ = _body_left(img)
-        pl = f["bodyLeft"] - l_
-        pr = f["bodyLeft"] + f["rightOfLeft"] - pl - img.w
-    else:
-        pl = f["left"] - b["left"]
-        pr = f["right"] - b["right"] + (f["midW"] - (img.w - b["left"] - b["right"]))
-    pl, pt, pr, pb = max(0, pl), max(0, pt), max(0, pr), max(0, pb)
-    if not (pl or pt or pr or pb):
-        return img, sp
-    out = P.Img(img.w + pl + pr, img.h + pt + pb)
-    out.paste(img, pl, pt)
-    nb = {"left": b["left"] + pl if b["left"] or b["right"] else 0, "right": b["right"] + pr if b["left"] or b["right"] else 0,
-          "top": b["top"] + pt if b["top"] or b["bottom"] else 0, "bottom": b["bottom"] + pb if b["top"] or b["bottom"] else 0}
-    entry["decisions"].append("family %s (sameCanvas): padded %d/%d/%d/%d px (left/top/right/bottom) to the family's canvas" % (fam, pl, pt, pr, pb))
-    return out, dict(sp, img=out, borders=nb)
+                fams.setdefault(fam, []).append(sp)
+                c_of[id(sp)] = c
+    out = {}
+    for fam, members in fams.items():
+        if len(members) < 2:
+            continue
+        info = []
+        for sp in members:
+            img, b = sp["img"], sp["borders"]
+            m = {"sp": sp, "img": img, "b": dict(b)}
+            for axis, (lo_k, hi_k, n) in (("x", ("left", "right", img.w)), ("y", ("top", "bottom", img.h))):
+                sliced = bool(b[lo_k] or b[hi_k])
+                cw = n - b[lo_k] - b[hi_k] if sliced else 0
+                along = b[lo_k] + cw // 2 if sliced else n // 2
+                o_lo, o_hi = ("top", "bottom") if axis == "x" else ("left", "right")
+                o_n = img.h if axis == "x" else img.w
+                o_sl = bool(b[o_lo] or b[o_hi])
+                at = b[o_lo] + (o_n - b[o_lo] - b[o_hi]) // 2 if o_sl else o_n // 2
+                s0, e0 = _body_span(c_of[id(sp)], sp, axis, img, b, lo_k)
+                if s0 is None:
+                    s0, e0 = _inner_span(img, axis, at, along)
+                m[axis] = {"sliced": sliced, "a": b[lo_k], "cw": cw, "n": n, "s": s0, "len": e0 - s0}
+            info.append(m)
+        for axis in ("x", "y"):
+            sliced = all(m[axis]["sliced"] for m in info)
+            S = max(m[axis]["s"] for m in info)
+            Lb = max(m[axis]["len"] for m in info)
+            for m in info:
+                d = m[axis]
+                d["o"] = S - d["s"]
+                d["d"] = (Lb - d["len"]) if sliced else 0
+            if sliced:
+                A = max(d["a"] + d["o"] for d in (m[axis] for m in info))
+                Z = min(d["a"] + d["cw"] + d["o"] + d["d"] for d in (m[axis] for m in info))
+                if Z - A < keep:
+                    for m in info:
+                        m[axis]["d"] += keep - (Z - A)
+                    Z = A + keep
+            W = max(m[axis]["o"] + m[axis]["n"] + m[axis]["d"] for m in info)
+            for m in info:
+                m[axis]["W"] = W
+                if sliced:
+                    m[axis]["A"], m[axis]["Z"] = A, Z
+        for m in info:
+            img = m["img"]
+            for axis in ("x", "y"):
+                d = m[axis]
+                if d["sliced"] and d["d"]:
+                    img = _expand(img, axis, d["a"], d["cw"], d["d"])
+            X, Y = m["x"], m["y"]
+            canvas = P.Img(X["W"], Y["W"])
+            canvas.paste(img, X["o"], Y["o"])
+            nb = {"left": X["A"] if "A" in X else 0, "right": X["W"] - X["Z"] if "Z" in X else 0,
+                  "top": Y["A"] if "A" in Y else 0, "bottom": Y["W"] - Y["Z"] if "Z" in Y else 0}
+            note = ("family %s (sameCanvas): inner area lined up at %d,%d (%dx%d) on a %dx%d canvas; strokes and shadows "
+                    "grow outward" % (fam, max(x["s"] + x["o"] for x in [X]), Y["s"] + Y["o"], X["len"] + X["d"], Y["len"] + Y["d"],
+                                      X["W"], Y["W"]))
+            out[id(m["sp"])] = (canvas, nb, note)
+    return out
 
 
 def _family_targets(cands, min_size, max_size):
